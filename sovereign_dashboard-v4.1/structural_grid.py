@@ -33,7 +33,7 @@ SECTIONS = {
             },
             "Layer 2: Grid & Utilities": {
                 "weight": 0.40,
-                "tickers": ["LIN", "ABBN", "SU.PA", "GEV", "ETN", "NVT", "CEG", "PWR", "CWCO",
+                "tickers": ["LIN", "ABBN.SW", "SU.PA", "GEV", "ETN", "NVT", "CEG", "PWR", "CWCO",
                             "XYL", "ECL", "WM", "RSG"],
                 "protocol": "Industrial gases, power electrification, grid equipment, clean "
                             "nuclear energy for data centers, water tech, and environmental waste.",
@@ -55,7 +55,7 @@ SECTIONS = {
         "layers": {
             "Layer 1: Monetary Royalties": {
                 "weight": 0.40,
-                "tickers": ["FNV", "WPM"],
+                "tickers": ["FNV", "WPM", "BSM", "DMLP"],
                 "protocol": "Precious metals streaming and asset-light gold/silver royalty engines.",
             },
             "Layer 2: Baseload Energy": {
@@ -119,18 +119,14 @@ SECTIONS = {
             },
             "Layer 3: Other Jurisdiction": {
                 "weight": 0.20,
-                "tickers": ["HIJP.L", "TLK", "EIDO", "VALE", "0883.HK", "CSUAY", "0941.HK", "ISDE.L"],
-                # HIJP.L = HSBC MSCI Japan Islamic Screened UCITS ETF (LSE, needs ".L")
+                "tickers": ["TLK", "VALE", "0883.HK", "CSUAY", "0941.HK"],
                 # TLK = Telkom Indonesia ADR (NYSE)
-                # EIDO = iShares MSCI Indonesia ETF (grid said "INDO", not itself a real ticker --
-                #        using the actual Indonesia ETF ticker instead)
                 # VALE = Vale S.A. ADR (NYSE)
                 # 0883.HK = CNOOC Ltd (grid said "CEO") -- CEO was CNOOC's NYSE ADR ticker, delisted
                 #           March 2021 under Executive Order 13959; now HKEX-only
                 # CSUAY = China Shenhua Energy ADR (OTC)
                 # 0941.HK = China Mobile Ltd (grid said "CHL") -- CHL was delisted from NYSE January
                 #           2021 under the same executive order; now HKEX-only
-                # ISDE.L = iShares MSCI EM Islamic UCITS ETF (LSE, needs ".L"; grid said "ISDE")
                 "protocol": "Resource-rich emerging markets (Brazil/Indonesia), proxy ETFs, and "
                             "dominant international infrastructure/telecom operators.",
             },
