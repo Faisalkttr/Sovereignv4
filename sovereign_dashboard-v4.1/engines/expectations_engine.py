@@ -231,13 +231,27 @@ class SovereignExpectationsEngine:
 
         info = self.stock.info or {}
         shares_outstanding = info.get("sharesOutstanding")
+        # NOTE: bool(np.nan) is True, so a plain truthy check ("if shares_outstanding:")
+        # would treat a NaN sharesOutstanding value (a real thing yfinance returns for
+        # some tickers, especially ADRs) as valid, silently multiplying Close * NaN and
+        # producing an entirely-NaN Market_Cap column. Guard explicitly against that.
+        shares_outstanding_valid = (
+            shares_outstanding is not None
+            and not (isinstance(shares_outstanding, float) and np.isnan(shares_outstanding))
+            and shares_outstanding > 0
+        )
 
-        if shares_outstanding:
+        if shares_outstanding_valid:
             df_data["Market_Cap"] = df_data["Close"] * shares_outstanding
             market_cap_confidence = "high"
         else:
             market_cap_now = info.get("marketCap")
-            if not market_cap_now or market_cap_now <= 0:
+            market_cap_now_valid = (
+                market_cap_now is not None
+                and not (isinstance(market_cap_now, float) and np.isnan(market_cap_now))
+                and market_cap_now > 0
+            )
+            if not market_cap_now_valid:
                 raise ValueError(
                     f"{self.ticker}: Unable to determine shares outstanding or "
                     f"market cap from info; cannot compute P/S history."
