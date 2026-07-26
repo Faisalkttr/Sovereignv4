@@ -229,6 +229,20 @@ class SovereignExpectationsEngine:
         df_data = pd.DataFrame(index=hist.index)
         df_data["Close"] = hist["Close"]
 
+        # yfinance frequently appends a trailing "phantom" row for the current
+        # calendar day before that day's price actually posts (a date-rollover
+        # artifact driven by the caller's local timezone vs. the exchange's own
+        # session clock). That row has NaN OHLC. Left in place, it becomes the
+        # df_data.iloc[-1] row that downstream code treats as "today", giving a
+        # NaN Close -> NaN Market_Cap even though real data exists one row back.
+        # Drop any row with no Close so the true last trading day is what
+        # "current" actually refers to everywhere below.
+        df_data = df_data.dropna(subset=["Close"])
+        if df_data.empty:
+            raise ValueError(
+                f"{self.ticker}: No valid (non-NaN) closing prices found in history."
+            )
+
         info = self.stock.info or {}
         shares_outstanding = info.get("sharesOutstanding")
         # NOTE: bool(np.nan) is True, so a plain truthy check ("if shares_outstanding:")
