@@ -1,26 +1,16 @@
 """
-Structural Allocation Grid — WATCHLIST-MAXIMAL BUILD
-Pure data encoding of the revised portfolio grid (sections -> layers ->
-target weights -> tickers -> protocol/thesis). Kept as pure data (no
-Streamlit, no network calls) so any page/engine can import SECTIONS or
-call flatten_universe() without side effects.
+Structural Allocation Grid — WATCHLIST-MAXIMAL BUILD (v4.1-compatible)
+Pure data encoding (sections -> layers -> target weights -> tickers ->
+protocol/thesis). No Streamlit, no network calls; safe to import anywhere.
 
-This recode is deliberately additive: it uses the reorganized layer
-skeleton (INFRA 4 layers, E&C 3, AI/SEMIS 4, EM 3, Overlay 5 names,
-BTC core/satellite split) but retains EVERY ticker that ever appeared
-in any prior grid, yaml, or expansion list. Nothing is removed:
-  * either/or pairs (FTNT/CHKP, CRWD/ZS) keep BOTH members;
-  * previously cut names (CVX, COP, NUE) and old royalty tails
-    (BSM, DMLP) are re-added as watchlist satellites;
-  * delisted ADRs (CEO, CHL) stay on the list next to their live
-    HKEX listings (0883.HK, 0941.HK);
-  * symbol-mapping alternatives are noted in comments, not duplicated.
+Additive by design: every ticker from every prior grid/yaml/expansion list
+is retained (either/or pairs keep BOTH members; previously cut names and
+delisted ADRs remain as watchlist satellites).
 
-Core/satellite convention: tickers listed in a layer's "satellites"
-key are half-size watchlist positions that must re-earn their slot;
-everyone else is core. This is a convention only -- flatten_universe()
-exposes it as "role" but effective_weight remains the layer's shared
-ceiling (section_target_pct * layer_weight), NOT a per-ticker split.
+Core/satellite convention: tickers in a layer's "satellites" key are
+half-size watchlist positions; everyone else is core. effective_weight
+remains the layer's shared ceiling (section_target_pct * layer_weight),
+NOT a per-ticker entitlement.
 
 Core portfolio (sums to 100%):
 INFRA 14% + ENERGY & COMMODITY 18% + AI/SEMIS 10% + EM 7%
@@ -48,7 +38,7 @@ SECTIONS = {
                 "protocol": "Industrial gases, power electrification, grid equipment, clean nuclear for "
                             "data centers, HV/subsea cabling (PRY.MI), AI-DC optical/power cabling "
                             "(Fujikura), DC power & liquid cooling (VRT), power EPC (PWR, AGX), "
-                            "motion control (PH, moved here from E&C), fuel cells (BE).",
+                            "motion control (PH), fuel cells (BE).",
             },
             "Layer 3: Water & Environmental": {
                 "weight": 0.10,
@@ -63,9 +53,8 @@ SECTIONS = {
                 "satellites": ["ADTN", "CALX", "HLIT"],
                 "core_eligible": ["PANW"],
                 "protocol": "Data center networking switches, zero-trust/perimeter cloud cybersecurity, "
-                            "identity (OKTA); broadband-access satellites (ADTN/CALX/HLIT). FTNT/CHKP and "
-                            "CRWD/ZS were either/or pairs in the grid -- BOTH members kept for the "
-                            "watchlist; the layer weight is a shared ceiling, not a per-ticker entitlement.",
+                            "identity (OKTA); broadband-access satellites. FTNT/CHKP and CRWD/ZS were "
+                            "either/or pairs -- BOTH members kept; layer weight is a shared ceiling.",
             },
         },
     },
@@ -143,8 +132,8 @@ SECTIONS = {
                             "HFCL.NS", "CONCOR.NS", "SUNPHARMA.NS", "HCLTECH.NS", "PIIND.NS", "STLTECH.NS",
                             "PRECWIRE.NS", "MTARTECH.NS", "HINDCOPPER.NS", "DIACABS.NS"],
                 "satellites": ["PIIND.NS", "STLTECH.NS", "PRECWIRE.NS", "MTARTECH.NS", "HINDCOPPER.NS", "DIACABS.NS"],
-                # ABB.NS (not bare "ABB", which is Swiss ABB Ltd). POWERINDIA.NS = Hitachi Energy India,
-                # verified against Yahoo Finance ("HITACHIENR.NS"/"HITACHI-ENERGY" are not the symbol).
+                # ABB.NS (not bare "ABB" = Swiss ABB Ltd). POWERINDIA.NS = Hitachi Energy India, verified
+                # against Yahoo Finance ("HITACHIENR.NS"/"HITACHI-ENERGY" are not the symbol).
                 "protocol": "Indian grid modernization, power transmission, EMS/electronics manufacturing, "
                             "rail logistics, agrochemicals, pharmaceuticals, and enterprise IT services. "
                             "DIACABS.NS -- verify exact listing.",
@@ -161,9 +150,9 @@ SECTIONS = {
                 "weight": 0.30,
                 "tickers": ["TLK", "VALE", "0883.HK", "CSUAY", "0941.HK", "BABAF", "YPF",
                             "0883.HK", "0941.HK", "INDO", "ISDE.L", "HIJP", "KAP.IL"],
-                "satellites": ["0883.HK", "0941.HK", "INDO", "ISDE.L", "HIJP", "KAP.IL"],
-                # CEO/CHL were the NYSE ADRs for CNOOC/China Mobile, delisted 2021 (EO 13959);
-                # live listings are 0883.HK / 0941.HK. ADRs retained for watchlist continuity only.
+                "satellites": ["CEO", "CHL", "INDO", "ISDE.L", "HIJP", "KAP.IL"],
+                # CEO/CHL = delisted NYSE ADRs (EO 13959, 2021); live listings are 0883.HK / 0941.HK.
+                # Retained for watchlist continuity only.
                 "protocol": "Resource-rich emerging markets (Brazil/Indonesia), dominant international "
                             "infrastructure/telecom operators, China value (BABAF), LatAm energy (YPF). "
                             "INDO/ISDE.L/HIJP/KAP.IL -- verify exact vehicles.",
@@ -227,4 +216,109 @@ SECTIONS = {
 }
 
 # No separate satellite tier -- everything lives inside SECTIONS above.
-# Kept as an empty dict so any code iterating SATELLITE
+# Kept as an empty dict so any code iterating SATELLITE doesn't break.
+SATELLITE = {}
+
+
+def flatten_universe() -> list[dict]:
+    """
+    Flattens SECTIONS (+ SATELLITE, empty) into one row-per-ticker list:
+    [{"ticker", "section", "layer", "layer_weight", "section_target_pct",
+    "effective_weight", "protocol", "group", "role"}]
+
+    effective_weight = section_target_pct * layer_weight -- the layer's slice
+    of the whole portfolio, i.e. an upper bound when ranking within a layer,
+    NOT a per-ticker entitlement.
+
+    "role" = "satellite" if the ticker is in the layer's "satellites" key,
+    else "core".
+
+    Exceptions:
+      * Overlay layers each hold exactly one ticker with an explicit weight
+        (30/20/20/15/15) -- there effective_weight IS the per-ticker target.
+      * BTC "Equity Satellites" weight (0.10 of the 0.25 sleeve) is a hard
+        cap for MSTR+RIOT combined, not an entitlement each.
+    """
+    rows = []
+    for section_name, section in SECTIONS.items():
+        target_pct = section.get("target_pct")
+        if "layers" in section:
+            for layer_name, layer in section["layers"].items():
+                satellites = set(layer.get("satellites", []))
+                for ticker in layer["tickers"]:
+                    rows.append({
+                        "ticker": ticker,
+                        "section": section_name,
+                        "layer": layer_name,
+                        "layer_weight": layer["weight"],
+                        "section_target_pct": target_pct,
+                        "effective_weight": (target_pct or 0) * layer["weight"],
+                        "protocol": layer.get("protocol", ""),
+                        "group": "core",
+                        "role": "satellite" if ticker in satellites else "core",
+                    })
+        else:
+            for ticker in section["tickers"]:
+                rows.append({
+                    "ticker": ticker,
+                    "section": section_name,
+                    "layer": section_name,
+                    "layer_weight": 1.0,
+                    "section_target_pct": target_pct,
+                    "effective_weight": target_pct or 0,
+                    "protocol": section.get("protocol", ""),
+                    "group": "core",
+                    "role": "core",
+                })
+    for section_name, section in SATELLITE.items():
+        target_pct = section.get("target_pct")
+        for ticker in section["tickers"]:
+            rows.append({
+                "ticker": ticker,
+                "section": section_name,
+                "layer": section_name,
+                "layer_weight": 1.0,
+                "section_target_pct": target_pct,
+                "effective_weight": target_pct or 0,
+                "protocol": section.get("protocol", ""),
+                "group": "satellite",
+                "role": "satellite",
+            })
+    return rows
+
+
+# Non-equity placeholders (skip in engines that need P/S / revenue data)
+NON_EQUITY_TICKERS = {"BTC", "GOLD", "CASH"}
+
+# Tickers explicitly marked "core eligible" in the grid, or a natural core read
+# (land/royalty/monopoly-style holdings) -- drives is_core in the Valuation Engine.
+CORE_ELIGIBLE_TICKERS = {
+    "TPL", "ADPORTS.AD", "ICTSY", "CNI", "CP", "FNV", "WPM", "TSM", "ASML", "PANW",
+    "NVO", "XYL", "WM", "RSG",
+}
+
+# ---------------------------------------------------------------------------
+# BACKWARD-COMPAT ALIASES -- v4.1 Home.py import safety net.
+# Older builds of this module / older pages imported these names; keep them
+# resolving so `from structural_grid import (...)` can never fail on a rename.
+# ---------------------------------------------------------------------------
+CORE_SECTIONS = SECTIONS                      # pre-revision export name
+GRID = SECTIONS                               # earliest export name
+SAT = SATELLITE
+NON_EQUITY = NON_EQUITY_TICKERS
+CORE_ELIGIBLE = CORE_ELIGIBLE_TICKERS
+UNIVERSE = flatten_universe()                 # precomputed rows
+SECTION_TARGETS = {n: s.get("target_pct") for n, s in SECTIONS.items()}
+
+__all__ = [
+    "SECTIONS", "CORE_SECTIONS", "GRID", "SATELLITE", "SAT",
+    "flatten_universe", "UNIVERSE", "NON_EQUITY_TICKERS", "NON_EQUITY",
+    "CORE_ELIGIBLE_TICKERS", "CORE_ELIGIBLE", "SECTION_TARGETS",
+]
+
+
+def __getattr__(name):  # PEP 562 -- friendly error if Home.py wants more
+    raise ImportError(
+        f"cannot import name {name!r} from 'structural_grid'. "
+        f"Available exports: {sorted(__all__)}"
+    )
