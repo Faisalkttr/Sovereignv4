@@ -317,8 +317,12 @@ __all__ = [
 ]
 
 
-def __getattr__(name):  # PEP 562 -- friendly error if Home.py wants more
-    raise ImportError(
-        f"cannot import name {name!r} from 'structural_grid'. "
+def __getattr__(name):  # PEP 562 -- must raise AttributeError, never ImportError
+    # Dunder lookups (__path__, __file__, __spec__, ...) are normal attribute
+    # probes by the import system / Streamlit's watcher -- fail silently.
+    if name.startswith("__") and name.endswith("__"):
+        raise AttributeError(name)
+    raise AttributeError(
+        f"module 'structural_grid' has no attribute {name!r}. "
         f"Available exports: {sorted(__all__)}"
     )
