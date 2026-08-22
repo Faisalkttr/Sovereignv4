@@ -23,7 +23,7 @@ SECTIONS = {
         "layers": {
             "Layer 1: Hard Assets & Global Freight": {
                 "weight": 0.35,
-                "tickers": ["TPL", "ADPORTS.AD", "ICTSY", "CNI", "CP", "UNP", "MATX", "DSV.CO", "RYN"],
+                "tickers": ["TPL", "ADPORTS.AD", "ICTEF", "CNI", "CP", "UNP", "MATX", "DSV.CO", "RYN"],
                 # ADPORTS.AD = AD Ports Group (grid said "ADPORTS"); ICTSY = ICTSI ADR (grid said "ICTEY")
                 "protocol": "Landowners, royalty engines, maritime ports, and Class I transcontinental "
                             "freight rail networks; Jones Act maritime shipping (MATX) and global "
