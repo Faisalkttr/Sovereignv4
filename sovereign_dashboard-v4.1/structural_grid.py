@@ -23,7 +23,7 @@ SECTIONS = {
         "layers": {
             "Layer 1: Hard Assets & Global Freight": {
                 "weight": 0.35,
-                "tickers": ["TPL", "ADPORTS.AD", "ICTSY", "CNI", "CP", "UNP", "MATX", "DSV.CO"],
+                "tickers": ["TPL", "ADPORTS.AD", "ICTSY", "CNI", "CP", "UNP", "MATX", "DSV.CO", "RYN"],
                 # ADPORTS.AD = AD Ports Group (grid said "ADPORTS"); ICTSY = ICTSI ADR (grid said "ICTEY")
                 "protocol": "Landowners, royalty engines, maritime ports, and Class I transcontinental "
                             "freight rail networks; Jones Act maritime shipping (MATX) and global "
@@ -32,7 +32,7 @@ SECTIONS = {
             "Layer 2: Electrification, Grid & Utilities": {
                 "weight": 0.40,
                 "tickers": ["LIN", "ABBN.SW", "SU.PA", "GEV", "ETN", "NVT", "CEG", "PWR",
-                            "PRY.MI", "5801.T", "VRT", "AGX", "PH", "BE"],
+                            "PRY.MI", "5801.T", "VRT", "AGX", "PH", "BE", "AI.PA"],
                 "satellites": ["PH", "BE"],
                 # 5803.T = Fujikura, Tokyo listing (grid showed "FUWAY" OTC ADR; FUWAF also seen)
                 "protocol": "Industrial gases, power electrification, grid equipment, clean nuclear for "
@@ -42,7 +42,7 @@ SECTIONS = {
             },
             "Layer 3: Water & Environmental": {
                 "weight": 0.10,
-                "tickers": ["XYL", "ECL", "WM", "RSG", "CWCO", "BMI"],
+                "tickers": ["XYL", "ECL", "WM", "RSG", "CWCO", "BMI", "LNN"],
                 "satellites": ["CWCO", "BMI"],
                 "protocol": "Water tech and environmental waste: treatment, smart metering, process "
                             "chemistry, waste duopoly, niche desalination.",
@@ -63,14 +63,14 @@ SECTIONS = {
         "layers": {
             "Layer 1: Monetary Royalties": {
                 "weight": 0.30,
-                "tickers": ["FNV", "WPM", "BSM", "DMLP"],
+                "tickers": ["FNV", "WPM", "BSM", "DMLP", "AEM"],
                 "satellites": ["BSM", "DMLP"],
                 "protocol": "Precious metals streaming and asset-light gold/silver royalty engines; "
                             "BSM/DMLP add an energy/mineral royalty tail.",
             },
             "Layer 2: Baseload & Nuclear Energy": {
                 "weight": 0.40,
-                "tickers": ["CCJ", "UUUU", "CNQ", "XOM", "SU", "EQT", "CVX"],
+                "tickers": ["CCJ", "UUUU", "CNQ", "XOM", "SU", "EQT", "CVX", "CNR.TO", "IMO", "DINO", "DTM", "NTOIY"],
                 "satellites": ["CVX"],
                 "light_only": ["XOM"],
                 "protocol": "Uranium pure-plays for nuclear baseload (CCJ, UUUU), oil sands, natural gas, "
@@ -80,7 +80,7 @@ SECTIONS = {
             "Layer 3: Industrial & Critical Materials": {
                 "weight": 0.30,
                 "tickers": ["FCX", "SCCO", "BHP", "NEM", "STLD", "CAT", "3750.HK",
-                            "COP", "NUE", "HBM", "AA", "ALB", "ALM", "LYL.AX"],
+                            "COP", "NUE", "HBM", "AA", "ALB", "ALM", "LYL.AX", "ADM", "CTVA"],
                 "satellites": ["COP", "NUE", "HBM", "AA", "ALB", "ALM", "LYL.AX"],
                 # 3750.HK = CATL (HK listing); LYL.AX = Lycopodium (grid showed "LYSCF" OTC)
                 "protocol": "Copper/iron mining for global electrification, efficient steel, heavy "
@@ -94,15 +94,15 @@ SECTIONS = {
         "layers": {
             "Layer 1: Physical Monopolies, Foundry & Materials": {
                 "weight": 0.45,
-                "tickers": ["TSM", "ASML", "SHECY", "ENTG", "GFS", "6920.T", "AXTI", "ALMU"],
-                "satellites": ["6920.T", "AXTI", "ALMU"],
+                "tickers": ["TSM", "ASML", "SHECY", "ENTG", "GFS", "6920.T", "AXTI", "ALMU", "AMKR"],
+                "satellites": ["6920.T", "AXTI", "ALMU", "AMKR"],
                 "protocol": "Structural monopolies in advanced foundries, EUV lithography systems, silicon "
                             "wafers, and EUV mask inspection; materials/filtration (ENTG) and differentiated "
                             "foundry (GFS); photonics/substrate satellites (AXTI, ALMU -- verify).",
             },
             "Layer 2: Architecture, Robotics, Edge & Memory": {
                 "weight": 0.30,
-                "tickers": ["AVGO", "CDNS", "QCOM", "FANUY", "8035.T", "SNPS", "MRAM", "AMBA", "PENG"],
+                "tickers": ["AVGO", "CDNS", "QCOM", "FANUY", "8035.T", "SNPS", "MRAM", "AMBA", "PENG", "LSCC"],
                 "satellites": ["MRAM", "AMBA", "PENG"],
                 "protocol": "Custom AI ASICs, EDA software, edge AI silicon, industrial factory robotics; "
                             "memory IP/security (MRAM), edge vision (AMBA), AI memory modules (PENG).",
