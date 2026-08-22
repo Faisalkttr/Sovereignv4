@@ -32,7 +32,7 @@ SECTIONS = {
             "Layer 2: Electrification, Grid & Utilities": {
                 "weight": 0.40,
                 "tickers": ["LIN", "ABBN.SW", "SU.PA", "GEV", "ETN", "NVT", "CEG", "PWR",
-                            "PRY.MI", "5803.T", "VRT", "AGX", "PH", "BE"],
+                            "PRY.MI", "5801.T", "VRT", "AGX", "PH", "BE"],
                 "satellites": ["PH", "BE"],
                 # 5803.T = Fujikura, Tokyo listing (grid showed "FUWAY" OTC ADR; FUWAF also seen)
                 "protocol": "Industrial gases, power electrification, grid equipment, clean nuclear for "
