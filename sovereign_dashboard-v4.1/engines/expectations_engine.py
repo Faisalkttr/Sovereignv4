@@ -280,8 +280,21 @@ class SovereignExpectationsEngine:
         # Forward-fill revenue steps daily, but do NOT back-fill: rows
         # before the first known revenue print have no real TTM revenue
         # and should be dropped rather than fabricated.
-        df_data = df_data.join(rev_series.to_frame(name="Revenue_TTM"), how="left")
-        df_data["Revenue_TTM"] = df_data["Revenue_TTM"].ffill()
+        #
+        # NOTE: rev_series is indexed on fiscal *period-end* dates (quarter/
+        # year end), which very often fall on a weekend or market holiday
+        # and therefore almost never appear verbatim in df_data's trading-
+        # day index. A plain `.join(how="left")` only fills a value when the
+        # two indexes share an EXACT timestamp -- if none of a ticker's
+        # report dates happen to land on an actual trading day (luck of the
+        # calendar; e.g. FDS's Aug 31 fiscal year end), every row silently
+        # stays NaN, ffill() has nothing to propagate, and the subsequent
+        # dropna() wipes the entire frame. `reindex(..., method="ffill")`
+        # instead does an asof-style lookup: for each trading day it takes
+        # the most recent known revenue print at or before that day,
+        # regardless of whether the dates match exactly.
+        rev_series = rev_series.sort_index()
+        df_data["Revenue_TTM"] = rev_series.reindex(df_data.index, method="ffill")
         df_data = df_data.dropna(subset=["Revenue_TTM"])
 
         if df_data.empty:
