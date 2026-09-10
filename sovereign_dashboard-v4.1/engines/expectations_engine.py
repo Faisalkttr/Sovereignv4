@@ -5,11 +5,21 @@ import yfinance as yf
 
 class SovereignExpectationsEngine:
     """
-    Sovereign Expectations Engine v2.1 (hardened)
+    Sovereign Expectations Engine v2.2 (hardened)
 
     A completely decoupled, standalone analytical entity that processes
     implied market expectations and priced-for-perfection risk profiles.
     Operates independently or alongside Macro and v1.2 Engine architectures.
+
+    Changes from v2.1:
+      - Added robust market-cap fallback hierarchy for incomplete Yahoo/yfinance
+        metadata, including fast_info and implied shares from current market cap.
+      - Missing sharesOutstanding/marketCap is no longer automatically fatal when
+        current market cap can be reconstructed from available data.
+      - Historical P/S reconstructed from implied/current shares is explicitly
+        confidence-downgraded and validated against current market cap.
+      - Current-only market-cap fallback remains available without fabricating a
+        5-year P/S history.
 
     Changes from v2.0:
       - Fixed a tz_localize crash in the hard revenue fallback path.
@@ -268,39 +278,112 @@ class SovereignExpectationsEngine:
                 f"{self.ticker}: No valid (non-NaN) closing prices found in history."
             )
 
+        # ------------------------------------------------------------------
+        # Robust market-cap reconstruction
+        #
+        # Yahoo/yfinance does not expose sharesOutstanding/marketCap
+        # consistently across ADRs, NSE listings, and some foreign tickers.
+        # We therefore use a controlled fallback hierarchy rather than making
+        # incomplete Yahoo metadata a fatal engine error.
+        #
+        # IMPORTANT:
+        # - Never silently use a fabricated historical market cap.
+        # - A historical series reconstructed from current shares is explicitly
+        #   labelled as an approximation.
+        # - Current market cap is validated where possible.
+        # ------------------------------------------------------------------
         info = self.stock.info or {}
-        shares_outstanding = info.get("sharesOutstanding")
-        # NOTE: bool(np.nan) is True, so a plain truthy check ("if shares_outstanding:")
-        # would treat a NaN sharesOutstanding value (a real thing yfinance returns for
-        # some tickers, especially ADRs) as valid, silently multiplying Close * NaN and
-        # producing an entirely-NaN Market_Cap column. Guard explicitly against that.
-        shares_outstanding_valid = (
-            shares_outstanding is not None
-            and not (isinstance(shares_outstanding, float) and np.isnan(shares_outstanding))
-            and shares_outstanding > 0
-        )
 
-        if shares_outstanding_valid:
-            df_data["Market_Cap"] = df_data["Close"] * shares_outstanding
-            market_cap_confidence = "high"
+        def _valid_positive_number(value) -> bool:
+            try:
+                return value is not None and np.isfinite(float(value)) and float(value) > 0
+            except Exception:
+                return False
+
+        shares_outstanding = info.get("sharesOutstanding")
+        shares_source = None
+        shares_confidence = None
+
+        # 1) Yahoo info: shares outstanding
+        if _valid_positive_number(shares_outstanding):
+            shares_outstanding = float(shares_outstanding)
+            shares_source = "Yahoo info['sharesOutstanding']"
+            shares_confidence = "high"
+
+        # 2) Try fast_info for current market cap.  This is often populated
+        #    when the slower info endpoint is incomplete.
+        fast_info = {}
+        try:
+            fi = self.stock.fast_info
+            if fi is not None:
+                if hasattr(fi, "keys"):
+                    fast_info = {k: fi[k] for k in fi.keys()}
+                elif isinstance(fi, dict):
+                    fast_info = fi
+        except Exception:
+            fast_info = {}
+
+        market_cap_now = info.get("marketCap")
+        if not _valid_positive_number(market_cap_now):
+            market_cap_now = fast_info.get("market_cap")
+
+        if _valid_positive_number(market_cap_now):
+            market_cap_now = float(market_cap_now)
         else:
-            market_cap_now = info.get("marketCap")
-            market_cap_now_valid = (
-                market_cap_now is not None
-                and not (isinstance(market_cap_now, float) and np.isnan(market_cap_now))
-                and market_cap_now > 0
-            )
-            if not market_cap_now_valid:
-                raise ValueError(
-                    f"{self.ticker}: Unable to determine shares outstanding or "
-                    f"market cap from info; cannot compute P/S history."
-                )
-            # Do NOT flatten the whole 5y history to today's market cap -
-            # that fabricates a P/S history that never existed. Only the
-            # most recent observation is trustworthy here.
+            market_cap_now = np.nan
+
+        # 3) If shares are unavailable but current market cap and current
+        #    price are available, derive an implied current share count.
+        #    This permits a historical approximation without pretending that
+        #    Yahoo supplied historical shares.
+        latest_close = float(df_data["Close"].iloc[-1])
+        implied_shares = np.nan
+        if not _valid_positive_number(shares_outstanding):
+            if _valid_positive_number(market_cap_now) and _valid_positive_number(latest_close):
+                implied_shares = market_cap_now / latest_close
+                shares_outstanding = implied_shares
+                shares_source = "Implied shares = current market cap / latest price"
+                shares_confidence = "low"
+
+        if _valid_positive_number(shares_outstanding):
+            # Reconstruct historical market cap using the best available share
+            # count.  If the count is implied from today's market cap, this is
+            # explicitly an assumption of constant shares outstanding.
+            df_data["Market_Cap"] = df_data["Close"] * float(shares_outstanding)
+
+            # Validate the reconstructed current market cap against Yahoo's
+            # current market cap when one is available.  A large discrepancy
+            # can indicate ADR/share-ratio or corporate-action issues.
+            current_reconstructed_cap = float(df_data["Market_Cap"].iloc[-1])
+            if _valid_positive_number(market_cap_now):
+                discrepancy = abs(current_reconstructed_cap / market_cap_now - 1.0)
+                if discrepancy > 0.10:
+                    # Do not discard usable data, but downgrade confidence.
+                    market_cap_confidence = "low"
+                    shares_source = (
+                        f"{shares_source}; current market-cap discrepancy "
+                        f"{discrepancy:.1%}"
+                    )
+                else:
+                    market_cap_confidence = shares_confidence
+            else:
+                market_cap_confidence = shares_confidence
+
+        elif _valid_positive_number(market_cap_now):
+            # Last-resort current-only fallback.  This preserves the ability
+            # to calculate current P/S but intentionally does NOT fabricate a
+            # 5-year P/S history.
             df_data["Market_Cap"] = np.nan
-            df_data.loc[df_data.index[-1], "Market_Cap"] = float(market_cap_now)
+            df_data.loc[df_data.index[-1], "Market_Cap"] = market_cap_now
             market_cap_confidence = "low"
+            shares_source = "Current market cap only; no historical share count"
+
+        else:
+            raise ValueError(
+                f"{self.ticker}: Unable to determine market cap from Yahoo "
+                f"info/fast_info and no valid price-based reconstruction is "
+                f"possible; cannot compute P/S."
+            )
 
         # Forward-fill revenue steps daily, but do NOT back-fill: rows
         # before the first known revenue print have no real TTM revenue
@@ -332,6 +415,7 @@ class SovereignExpectationsEngine:
 
         df_data.attrs["revenue_cadence"] = cadence
         df_data.attrs["market_cap_confidence"] = market_cap_confidence
+        df_data.attrs["market_cap_source"] = shares_source if "shares_source" in locals() else "Unavailable"
         return df_data
 
     # ------------------------------------------------------------------
@@ -575,5 +659,7 @@ class SovereignExpectationsEngine:
             "Valuation Anchor Confidence": anchor_confidence,
             "Valuation Anchor Observation Count": int(len(ps_series)),
             "Revenue Data Cadence": df_data.attrs.get("revenue_cadence", "unknown"),
+            "Market Cap Source": shares_source if "shares_source" in locals() else "Unavailable",
+
         }
         return self.metrics
