@@ -78,11 +78,19 @@ QUALITY_THRESHOLDS = {
     },
     "net_debt_to_ebitda": {
         "higher_is_better": False,
-        "bands": [(-np.inf, 100), (1.0, 80), (2.0, 60), (3.5, 40), (5.0, 20), (np.inf, 0)],
+        # NOTE: the top tier's upper bound must be a real finite cutoff (0.0,
+        # i.e. net-cash-or-debt-free), not -np.inf. score_metric checks
+        # `value <= upper_bound`; nothing is ever <= -infinity, so -np.inf
+        # here would make the "best" tier mathematically unreachable and
+        # silently cap every net-cash company at the second-best score (80)
+        # instead of the 100 the docstring says they deserve.
+        "bands": [(0.0, 100), (1.0, 80), (2.0, 60), (3.5, 40), (5.0, 20), (np.inf, 0)],
     },
     "dilution_rate": {
         "higher_is_better": False,
-        "bands": [(-np.inf, 100), (0.01, 80), (0.03, 60), (0.06, 40), (0.10, 20), (np.inf, 0)],
+        # Same fix as net_debt_to_ebitda above: 0.0 (flat share count / net
+        # buybacks) is the real cutoff for the top tier, not -np.inf.
+        "bands": [(0.0, 100), (0.01, 80), (0.03, 60), (0.06, 40), (0.10, 20), (np.inf, 0)],
     },
 }
 
