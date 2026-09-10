@@ -80,7 +80,7 @@ SECTIONS = {
             "Layer 3: Industrial & Critical Materials": {
                 "weight": 0.30,
                 "tickers": ["FCX", "SCCO", "BHP", "NEM", "STLD", "CAT", "3750.HK",
-                            "COP", "NUE", "HBM", "AA", "ALB", "ALM", "LYL.AX", "ADM", "CTVA"],
+                            "COP", "NUE", "HBM", "AA", "ALB", "ALM", "LYL.AX", "ADM", "CTVA", "LYSCF"],
                 "satellites": ["COP", "NUE", "HBM", "AA", "ALB", "ALM", "LYL.AX"],
                 # 3750.HK = CATL (HK listing); LYL.AX = Lycopodium (grid showed "LYSCF" OTC)
                 "protocol": "Copper/iron mining for global electrification, efficient steel, heavy "
