@@ -191,9 +191,22 @@ class SovereignExpectationsEngine:
             (r for r in rev_labels if not financials.empty and r in financials.index), None
         )
 
+        # NOTE: yfinance's free `quarterly_financials` endpoint typically only
+        # exposes the trailing ~4-5 reported quarters, not the full 5y window
+        # `hist` covers. A rolling 4-quarter sum over that short a series
+        # collapses to just 1-2 valid TTM points, which silently starves the
+        # P/S valuation-anchor history down to a few months even though price
+        # history goes back 5 years. `financials` (annual statements) usually
+        # covers ~4 fiscal years further back than that, so it's stitched in
+        # for any period *before* the quarterly-derived series begins -- this
+        # extends anchor coverage with zero overlap/double-counting risk,
+        # since annual points past the quarterly cutoff are excluded.
         cadence = None
+        quarterly_series = None
+        annual_series = None
+
         if quarterly_rev_row is not None:
-            rev_series = (
+            quarterly_series = (
                 quarterly_fin.loc[quarterly_rev_row]
                 .dropna()
                 .sort_index()
@@ -201,13 +214,25 @@ class SovereignExpectationsEngine:
                 .sum()
                 .dropna()
             )
-            if not rev_series.empty:
-                cadence = "quarterly"
+            if quarterly_series.empty:
+                quarterly_series = None
 
-        if cadence is None and annual_rev_row is not None:
-            rev_series = financials.loc[annual_rev_row].dropna().sort_index()
-            if not rev_series.empty:
-                cadence = "annual"
+        if annual_rev_row is not None:
+            annual_series = financials.loc[annual_rev_row].dropna().sort_index()
+            if annual_series.empty:
+                annual_series = None
+
+        if quarterly_series is not None and annual_series is not None:
+            cutoff = quarterly_series.index.min()
+            annual_extension = annual_series[annual_series.index < cutoff]
+            rev_series = pd.concat([annual_extension, quarterly_series]).sort_index()
+            cadence = "quarterly"  # tail cadence still drives the momentum-window logic
+        elif quarterly_series is not None:
+            rev_series = quarterly_series
+            cadence = "quarterly"
+        elif annual_series is not None:
+            rev_series = annual_series
+            cadence = "annual"
 
         if cadence is None:
             # Total hard fallback if financial tables fail completely.
