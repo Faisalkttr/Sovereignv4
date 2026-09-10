@@ -298,6 +298,8 @@ def get_hardened_valuation_data(ticker, years):
         financial_currency = info.get("financialCurrency")
         price_currency = info.get("currency")
         fx_series = None
+        fx_conversion_failed = False
+        fx_symbol = None
 
         if financial_currency and price_currency and financial_currency != price_currency:
             fx_symbol = f"{price_currency}{financial_currency}=X"
@@ -316,7 +318,24 @@ def get_hardened_valuation_data(ticker, years):
                     f"using {fx_symbol}; revenue divided by the historical FX rate series."
                 )
             else:
+                # NOTE: this used to fall through and let apply_fx_normalization()
+                # silently return the UNCONVERTED revenue series when fx_series is
+                # None, producing a "successful" result (err=None) whose PS_Ratio
+                # divides a price_currency market cap by financial_currency revenue.
+                # That's not degraded data -- it's wrong data, potentially wrong by
+                # an order of magnitude or more depending on the currency pair, and
+                # nothing downstream checks fx_note before treating the number as
+                # trustworthy. Required FX conversion that fails must be a hard
+                # error, not a silent unit mismatch.
+                fx_conversion_failed = True
                 fx_note = f"⚠️ Currency mismatch tracked ({financial_currency} vs {price_currency}). Cross currency conversion array [{fx_symbol}] failed loading."
+
+        if fx_conversion_failed:
+            return None, (
+                f"{ticker}: Reports in {financial_currency} but trades in {price_currency}, and the "
+                f"{fx_symbol} FX conversion series could not be loaded. Refusing to compute a P/S ratio "
+                f"that would silently divide a {price_currency} market cap by unconverted {financial_currency} revenue."
+            ), None, fx_note
 
         def apply_fx_normalization(series):
             if fx_series is None or series.empty:
