@@ -586,7 +586,7 @@ with tab_adhoc:
 
 
 def format_results(df: pd.DataFrame) -> pd.DataFrame:
-    """Shared display formatting for both tabs' result tables."""
+    """Shared display formatting for both tabs result tables."""
     display_df = df.copy()
     if "Structural Weight" in display_df.columns:
         display_df["Structural Weight"] = display_df["Structural Weight"].map(lambda x: f"{x:.1%}")
