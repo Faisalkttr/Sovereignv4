@@ -1745,7 +1745,7 @@ def get_hardened_valuation_data_v2(ticker, years):
                     df_daily["Enterprise_Value"] = df_daily["Market_Cap"] + df_daily["Debt_Historical"] - df_daily["Cash_Historical"]
                     df_daily["Valuation_Ratio"] = df_daily["Enterprise_Value"] / denominator
 
-                    anchor_desc = "TTM" if anchor_source == "ttm" else "annual"
+                    anchor_desc = "quarterly (TTM anchor)" if anchor_source == "ttm" else "annual"
 
                     if periods_back:
                         report_freq = (
@@ -1835,7 +1835,7 @@ def get_hardened_valuation_data_v2(ticker, years):
                     df_daily["Enterprise_Value"] = df_daily["Market_Cap"] + df_daily["Debt_Historical"] - df_daily["Cash_Historical"]
                     df_daily["Valuation_Ratio"] = df_daily["Enterprise_Value"] / denominator
 
-                    anchor_desc = "TTM" if anchor_source == "ttm" else "annual"
+                    anchor_desc = "quarterly (TTM anchor)" if anchor_source == "ttm" else "annual"
 
                     if periods_back:
                         report_freq = (
