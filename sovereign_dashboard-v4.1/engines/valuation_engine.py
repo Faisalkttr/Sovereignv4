@@ -125,9 +125,7 @@ SPECIAL_VALUATION_MODELS = {
 #     "0883.HK": "EV_EBITDA",
 #     "0941.HK": "EV_EBITDA",
 # }
-TICKER_MODEL_OVERRIDES = {
-       "BE": "PS",
-}
+TICKER_MODEL_OVERRIDES = {}
 
 
 def resolve_sector(info):
