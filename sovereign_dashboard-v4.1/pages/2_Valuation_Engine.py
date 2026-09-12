@@ -56,7 +56,12 @@ MODEL_LABELS = {
     "EV_EBITDA": "EV / EBITDA",
     "PB": "Price / Book",
     "P_FFO": "Price / FFO",
-    "PB_FFO_FALLBACK": "Price / Book (FFO fallback)",
+    "PB_FFO_FALLBACK": "Price / Book (FFO fallback, legacy)",
+    "PS_FFO_FALLBACK": "Price / Sales (FFO fallback)",
+    "EV_EBIT_LAGGED_ANCHOR": "EV / EBIT (lagged annual anchor)",
+    "EV_EBITDA_LAGGED_ANCHOR": "EV / EBITDA (lagged annual anchor)",
+    "PS_EBIT_FALLBACK": "Price / Sales (EBIT fallback)",
+    "PS_EBITDA_FALLBACK": "Price / Sales (EBITDA fallback)",
     "MANUAL OVERRIDE": "Manual Override",
     "ROYALTY OVERRIDE": "Royalty Override",
 }
@@ -129,6 +134,34 @@ def fetch_valuation_bundle(ticker, years):
         sector,
         valuation_model
     )
+
+
+def resolve_is_core(ticker, core_tickers):
+    """
+    Determines core-vs-tactical status for `ticker`.
+
+    Uses the engine's resolve_core_status() when available (v4.2+), which
+    additionally honors STRUCTURAL_CORE_OVERRIDES -- permanent core
+    designations that survive even if `core_tickers` doesn't include them.
+    Falls back to a plain membership check against `core_tickers` for
+    older engine versions, preserving the page's original behavior.
+    """
+    if hasattr(valuation_engine, "resolve_core_status"):
+        return valuation_engine.resolve_core_status(ticker, core_tickers)
+
+    return ticker in core_tickers
+
+
+def get_data_quality_notes(df_data):
+    """
+    Reads the engine's optional df_data.attrs["data_quality_notes"] list.
+    Returns an empty list for older engine versions or clean data with no
+    caveats, so callers don't need their own hasattr/try branching.
+    """
+    if df_data is None:
+        return []
+
+    return df_data.attrs.get("data_quality_notes", []) or []
 
 
 # ======================================================================
@@ -252,6 +285,7 @@ if batch_mode:
                         "Robust Z": "-",
                         "Percentile": "-",
                         "Scale Mult": "-",
+                        "Data Notes": "-",
                         "Error Logs": "Valuation ratio column unavailable."
                     })
                     continue
@@ -270,6 +304,7 @@ if batch_mode:
                         "Robust Z": "-",
                         "Percentile": "-",
                         "Scale Mult": "-",
+                        "Data Notes": "-",
                         "Error Logs": "Valuation ratio series empty after cleaning."
                     })
                     continue
@@ -294,7 +329,7 @@ if batch_mode:
 
                 b_stance, b_mult, _, _ = sovereign_allocation_engine(
                     ticker=token,
-                    is_core=token in SOVEREIGN_CORE,
+                    is_core=resolve_is_core(token, SOVEREIGN_CORE),
                     z_score=b_z,
                     robust_z_score=b_rob_z,
                     z_threshold=z_threshold,
@@ -305,6 +340,8 @@ if batch_mode:
                 )
 
                 b_posture = classify_action(b_mult)
+
+                b_dq_notes = get_data_quality_notes(b_df)
 
                 batch_records.append({
                     "Ticker": token,
@@ -317,6 +354,7 @@ if batch_mode:
                     "Robust Z": f"{b_rob_z:.2f}",
                     "Percentile": f"{b_diag['percentile']:.1f}%",
                     "Scale Mult": f"{b_mult:.2f}x",
+                    "Data Notes": f"⚠️ {len(b_dq_notes)}" if b_dq_notes else "-",
                     "Error Logs": ""
                 })
 
@@ -332,6 +370,7 @@ if batch_mode:
                     "Robust Z": "-",
                     "Percentile": "-",
                     "Scale Mult": "-",
+                    "Data Notes": "-",
                     "Error Logs": b_err if b_err else "Data retrieval execution failure"
                 })
 
@@ -349,6 +388,7 @@ if batch_mode:
             "Robust Z",
             "Percentile",
             "Scale Mult",
+            "Data Notes",
             "Error Logs"
         ]
 
@@ -389,7 +429,7 @@ ticker_input = st.text_input(
 ).upper().strip()
 
 if ticker_input:
-    is_core = ticker_input in SOVEREIGN_CORE
+    is_core = resolve_is_core(ticker_input, SOVEREIGN_CORE)
 
     with st.spinner(f"Splicing matrix components for {ticker_input}..."):
         (
@@ -545,6 +585,13 @@ if ticker_input:
 
         if fx_note:
             st.caption(f"🌐 Currency Matrix: {fx_note}")
+
+        dq_notes = get_data_quality_notes(df_data)
+
+        if dq_notes:
+            with st.expander(f"⚠️ Data Quality Notes ({len(dq_notes)})"):
+                for note in dq_notes:
+                    st.markdown(f"- {note}")
 
         # --------------------------------------------------------------
         # 6-Column Metrics Bar Setup
