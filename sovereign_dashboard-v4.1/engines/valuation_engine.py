@@ -335,6 +335,40 @@ def _finite_positive(x):
         return False
 
 
+def _normalize_datetime_index(obj):
+    """
+    Normalizes a Series/DataFrame's index to a plain, timezone-naive,
+    nanosecond-resolution DatetimeIndex (datetime64[ns]).
+
+    pandas 2.x allows multiple datetime64 resolutions (s, ms, us, ns), and
+    merge_asof() requires BOTH sides of a join to share the exact same
+    resolution, not just be datetime-like. A yfinance-sourced index (which
+    can come back at 's' or 'ns' resolution depending on version) merged
+    against a locally-built index (which defaults to 'us' resolution when
+    constructed from Python datetime/Timestamp arithmetic, e.g. adding a
+    reporting-lag pd.Timedelta) raises exactly this dtype mismatch:
+
+        incompatible merge keys ... dtype('<M8[s]') and dtype('<M8[us]')
+
+    Every frame/series that participates in a merge_asof() in this module
+    should be passed through this function immediately beforehand.
+    """
+    idx = pd.to_datetime(obj.index)
+
+    if idx.tz is not None:
+        idx = idx.tz_localize(None)
+
+    try:
+        idx = idx.as_unit("ns")
+    except AttributeError:
+        # Older pandas (<2.0) without unit-aware datetime64 / as_unit().
+        idx = idx.astype("datetime64[ns]")
+
+    out = obj.copy()
+    out.index = idx
+    return out
+
+
 def _safe_get_df(stock, attr_name):
     """
     Safely extracts a DataFrame from volatile yfinance endpoints.
@@ -522,11 +556,7 @@ def _build_fx_series(price_currency, financial_currency, years):
         )
         return fx_symbol, None, fx_note
 
-    fx_hist.index = pd.to_datetime(fx_hist.index)
-
-    if fx_hist.index.tz is not None:
-        fx_hist.index = fx_hist.index.tz_localize(None)
-
+    fx_hist = _normalize_datetime_index(fx_hist)
     fx_series = fx_hist.sort_index().rename("FX_Rate").to_frame()
 
     fx_note = (
@@ -546,13 +576,7 @@ def _apply_fx_normalization(series, fx_series):
     if fx_series is None or series.empty:
         return series
 
-    idx = pd.to_datetime(series.index)
-
-    if idx.tz is not None:
-        idx = idx.tz_localize(None)
-
-    df_ = series.copy()
-    df_.index = idx
+    df_ = _normalize_datetime_index(series)
     df_ = df_.sort_index().rename("Revenue_Raw").to_frame()
 
     df_ = pd.merge_asof(
@@ -617,7 +641,7 @@ def _row_history(df, candidates, fx_series):
     if row.empty:
         return pd.Series(dtype=float)
 
-    row.index = pd.to_datetime(row.index)
+    row = _normalize_datetime_index(row)
     row = row.sort_index()
 
     return _apply_fx_normalization(row, fx_series)
@@ -697,16 +721,19 @@ def _merge_point_in_time_onto_daily(df_daily, history_series, column_name, lag_d
         return df_daily
 
     hist_df = history_series.rename(column_name).to_frame()
-    hist_df.index = pd.to_datetime(hist_df.index)
-
-    if hist_df.index.tz is not None:
-        hist_df.index = hist_df.index.tz_localize(None)
+    hist_df = _normalize_datetime_index(hist_df)
 
     hist_df.index = hist_df.index + pd.Timedelta(days=lag_days)
+    # Re-normalize after the Timedelta arithmetic -- adding a Timedelta to
+    # a non-nanosecond DatetimeIndex can itself change the stored
+    # resolution depending on pandas version, so this isn't redundant.
+    hist_df = _normalize_datetime_index(hist_df)
     hist_df = hist_df.sort_index()
 
+    df_daily = _normalize_datetime_index(df_daily.sort_index())
+
     df_daily = pd.merge_asof(
-        df_daily.sort_index(),
+        df_daily,
         hist_df,
         left_index=True,
         right_index=True,
@@ -881,19 +908,22 @@ def _build_ps_valuation(df_daily, quarterly, income, fx_series):
         return None, None, revenue_error
 
     df_rev_sorted = df_rev[["Revenue_TTM"]].copy()
-    df_rev_sorted.index = pd.to_datetime(df_rev_sorted.index)
-
-    if df_rev_sorted.index.tz is not None:
-        df_rev_sorted.index = df_rev_sorted.index.tz_localize(None)
+    df_rev_sorted = _normalize_datetime_index(df_rev_sorted)
 
     # Shift the reporting date forward to approximate filing-date lag --
     # otherwise a Dec-31 TTM figure is treated as known to the market on
     # Jan 1, which is look-ahead bias relative to real-world filing delays.
     df_rev_sorted.index = df_rev_sorted.index + pd.Timedelta(days=REPORTING_LAG_DAYS)
+    # Re-normalize after the Timedelta arithmetic (see
+    # _normalize_datetime_index() docstring for why this isn't redundant).
+    df_rev_sorted = _normalize_datetime_index(df_rev_sorted)
+    df_rev_sorted = df_rev_sorted.sort_index()
+
+    df_daily = _normalize_datetime_index(df_daily.sort_index())
 
     df_daily = pd.merge_asof(
-        df_daily.sort_index(),
-        df_rev_sorted.sort_index(),
+        df_daily,
+        df_rev_sorted,
         left_index=True,
         right_index=True,
         direction="backward"
@@ -1455,10 +1485,7 @@ def get_hardened_valuation_data_v2(ticker, years):
             )
 
         df_daily = pd.DataFrame(history["Close"]).copy()
-        df_daily.index = pd.to_datetime(df_daily.index)
-
-        if df_daily.index.tz is not None:
-            df_daily.index = df_daily.index.tz_localize(None)
+        df_daily = _normalize_datetime_index(df_daily)
 
         # ------------------------------------------------------------------
         # Shares outstanding
@@ -1472,13 +1499,12 @@ def get_hardened_valuation_data_v2(ticker, years):
 
         if not shares.empty:
             shares_series = shares.sort_index()
-            shares_series.index = pd.to_datetime(shares_series.index)
+            shares_series = _normalize_datetime_index(shares_series)
 
-            if shares_series.index.tz is not None:
-                shares_series.index = shares_series.index.tz_localize(None)
+            df_daily = _normalize_datetime_index(df_daily.sort_index())
 
             df_daily = pd.merge_asof(
-                df_daily.sort_index(),
+                df_daily,
                 shares_series.rename("Shares").to_frame().sort_index(),
                 left_index=True,
                 right_index=True,
