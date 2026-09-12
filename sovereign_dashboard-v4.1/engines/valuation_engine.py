@@ -127,6 +127,12 @@ SPECIAL_VALUATION_MODELS = {
 # }
 TICKER_MODEL_OVERRIDES = {}
 
+# How many of the most recent annual reports EV/EBIT and EV/EBITDA are
+# willing to scan backward through to find a positive anchor value before
+# giving up and falling back to P/S. yfinance typically exposes ~4 years
+# of annual statements, so this also acts as a practical ceiling.
+EBIT_EBITDA_LOOKBACK_PERIODS = 4
+
 
 def resolve_sector(info):
     """
@@ -291,6 +297,55 @@ def _latest_from_candidates(df, candidates):
         return np.nan
 
     return _latest_value(df, label)
+
+
+def _row_from_candidates(df, candidates):
+    """
+    Returns the full reported row (most-recent-first, NaNs dropped) for the
+    first candidate row label found in df.index.
+    """
+    label = _first_present(df, candidates)
+
+    if label is None:
+        return pd.Series(dtype=float)
+
+    row = df.loc[label].dropna()
+
+    if row.empty:
+        return pd.Series(dtype=float)
+
+    return row.sort_index(ascending=False)
+
+
+def _latest_positive_from_candidates(df, candidates, fx_series, max_periods=4):
+    """
+    Scans the most recent `max_periods` reported values (most recent first)
+    of the first matching candidate row, and returns the first one that is
+    finite and positive after FX conversion.
+
+    A single unprofitable / break-even reporting period should not, on its
+    own, disqualify a company from an EV-multiple valuation if it was
+    profitable within the recent lookback window. `max_periods` bounds how
+    far back we're willing to reach so a company that hasn't been
+    profitable in years doesn't get a multiple built on stale numbers.
+
+    Returns:
+        (value, periods_back) where periods_back is 0 for the latest
+        reported period, 1 for one period prior, etc. Returns
+        (np.nan, None) if nothing usable was found in the window.
+    """
+    row = _row_from_candidates(df, candidates)
+
+    if row.empty:
+        return np.nan, None
+
+    for periods_back, raw_value in enumerate(row.iloc[:max_periods]):
+        value = _convert_statement_value(raw_value, fx_series)
+
+        if _finite_positive(value):
+            return value, periods_back
+
+    return np.nan, None
 
 
 # ----------------------------------------------------------------------
@@ -489,45 +544,122 @@ def _build_revenue_ttm(quarterly, annual, fx_series):
     return df_rev, report_freq, None
 
 
+def _build_ps_valuation(df_daily, quarterly, income, fx_series):
+    """
+    Builds a Market_Cap / Revenue_TTM Valuation_Ratio column onto df_daily.
+
+    Factored out of the main pipeline so it can be reused both as the
+    primary model for P/S sectors and as a fallback for EV/EBIT and
+    EV/EBITDA sectors when no usable positive EBIT/EBITDA anchor exists.
+
+    Returns:
+        df_daily, report_freq, error
+    """
+    df_rev, report_freq, revenue_error = _build_revenue_ttm(
+        quarterly=quarterly,
+        annual=income,
+        fx_series=fx_series
+    )
+
+    if revenue_error:
+        return None, None, revenue_error
+
+    df_rev_sorted = df_rev[["Revenue_TTM"]].copy()
+    df_rev_sorted.index = pd.to_datetime(df_rev_sorted.index)
+
+    if df_rev_sorted.index.tz is not None:
+        df_rev_sorted.index = df_rev_sorted.index.tz_localize(None)
+
+    df_daily = pd.merge_asof(
+        df_daily.sort_index(),
+        df_rev_sorted.sort_index(),
+        left_index=True,
+        right_index=True,
+        direction="backward"
+    )
+
+    df_daily = df_daily.dropna(subset=["Revenue_TTM", "Market_Cap"])
+    df_daily = df_daily[df_daily["Revenue_TTM"] > 0]
+
+    if df_daily.empty:
+        return (
+            None,
+            None,
+            "No valid tracking frames remain after performing trailing corporate revenue "
+            "and capitalization data filters."
+        )
+
+    df_daily["Valuation_Ratio"] = df_daily["Market_Cap"] / df_daily["Revenue_TTM"]
+
+    return df_daily, report_freq, None
+
+
 # ----------------------------------------------------------------------
 # Fundamental builder for EV/EBITDA, EV/EBIT, P/B, and P/FFO
 # ----------------------------------------------------------------------
 
-def _get_fundamentals(income, balance, cashflow, fx_series):
+def _get_fundamentals(income, balance, cashflow, fx_series, lookback_periods=4):
     """
-    Extracts latest fundamental anchors required for non-P/S models.
+    Extracts fundamental anchors required for non-P/S models.
+
+    For EBIT and EBITDA, this scans up to `lookback_periods` of the most
+    recent annual reports (most recent first) for the first *positive*
+    value, rather than only accepting the single latest period. A company
+    that had one weak or loss-making year but was profitable within the
+    lookback window can still be anchored on that earlier positive figure,
+    instead of hard-failing the whole valuation model.
 
     Returns:
         dict containing:
-            ebit
-            ebitda
+            ebit, ebit_periods_back
+            ebitda, ebitda_periods_back
             ffo
             total_debt
             cash
             equity
+
+    `*_periods_back` is 0 if the latest reported period was usable as-is,
+    a positive integer if an earlier period had to be used instead, and
+    None if no usable value was found anywhere in the lookback window.
     """
-    # EBIT
-    ebit_raw = _latest_from_candidates(
+    # EBIT -- scan back for the most recent positive value
+    ebit, ebit_periods_back = _latest_positive_from_candidates(
         income,
         [
             "EBIT",
             "Operating Income",
             "OperatingIncome"
-        ]
+        ],
+        fx_series,
+        max_periods=lookback_periods
     )
-    ebit = _convert_statement_value(ebit_raw, fx_series)
 
-    # EBITDA
-    ebitda_raw = _latest_from_candidates(
+    # EBITDA -- prefer a directly reported EBITDA line, scanned the same way
+    ebitda, ebitda_periods_back = _latest_positive_from_candidates(
         income,
         [
             "EBITDA"
-        ]
+        ],
+        fx_series,
+        max_periods=lookback_periods
     )
 
-    if _is_valid_number(ebitda_raw):
-        ebitda = _convert_statement_value(ebitda_raw, fx_series)
-    else:
+    if not _finite_positive(ebitda):
+        # No directly reported EBITDA row was usable within the window.
+        # Fall back to (latest EBIT + latest D&A). This only uses the
+        # latest period of each component, since reliably aligning older
+        # EBIT and D&A periods across two separate statements isn't
+        # guaranteed by yfinance's schemas.
+        latest_ebit_raw = _latest_from_candidates(
+            income,
+            [
+                "EBIT",
+                "Operating Income",
+                "OperatingIncome"
+            ]
+        )
+        latest_ebit = _convert_statement_value(latest_ebit_raw, fx_series)
+
         depreciation_raw = _latest_from_candidates(
             cashflow,
             [
@@ -538,10 +670,12 @@ def _get_fundamentals(income, balance, cashflow, fx_series):
         )
         depreciation = _convert_statement_value(depreciation_raw, fx_series)
 
-        if _is_valid_number(ebit) and _is_valid_number(depreciation):
-            ebitda = ebit + depreciation
-        else:
-            ebitda = np.nan
+        if _is_valid_number(latest_ebit) and _is_valid_number(depreciation):
+            derived_ebitda = latest_ebit + depreciation
+
+            if _finite_positive(derived_ebitda):
+                ebitda = derived_ebitda
+                ebitda_periods_back = 0
 
     # FFO -- not always available in yfinance, but try anyway
     ffo_raw = _latest_from_candidates(
@@ -620,7 +754,9 @@ def _get_fundamentals(income, balance, cashflow, fx_series):
 
     return {
         "ebit": ebit,
+        "ebit_periods_back": ebit_periods_back,
         "ebitda": ebitda,
+        "ebitda_periods_back": ebitda_periods_back,
         "ffo": ffo,
         "total_debt": total_debt,
         "cash": cash,
@@ -1084,9 +1220,10 @@ def get_hardened_valuation_data_v2(ticker, years):
         # P/S model
         # ------------------------------------------------------------------
         if requested_model == "PS":
-            df_rev, report_freq, revenue_error = _build_revenue_ttm(
+            df_daily, report_freq, revenue_error = _build_ps_valuation(
+                df_daily=df_daily,
                 quarterly=quarterly,
-                annual=income,
+                income=income,
                 fx_series=fx_series
             )
 
@@ -1100,36 +1237,6 @@ def get_hardened_valuation_data_v2(ticker, years):
                     valuation_model
                 )
 
-            df_rev_sorted = df_rev[["Revenue_TTM"]].copy()
-            df_rev_sorted.index = pd.to_datetime(df_rev_sorted.index)
-
-            if df_rev_sorted.index.tz is not None:
-                df_rev_sorted.index = df_rev_sorted.index.tz_localize(None)
-
-            df_daily = pd.merge_asof(
-                df_daily.sort_index(),
-                df_rev_sorted.sort_index(),
-                left_index=True,
-                right_index=True,
-                direction="backward"
-            )
-
-            df_daily = df_daily.dropna(subset=["Revenue_TTM", "Market_Cap"])
-            df_daily = df_daily[df_daily["Revenue_TTM"] > 0]
-
-            if df_daily.empty:
-                return (
-                    None,
-                    "No valid tracking frames remain after performing trailing corporate revenue "
-                    "and capitalization data filters.",
-                    None,
-                    fx_note,
-                    sector,
-                    valuation_model
-                )
-
-            df_daily["Valuation_Ratio"] = df_daily["Market_Cap"] / df_daily["Revenue_TTM"]
-
         else:
             # --------------------------------------------------------------
             # Non-P/S models require latest fundamental anchors
@@ -1138,7 +1245,8 @@ def get_hardened_valuation_data_v2(ticker, years):
                 income=income,
                 balance=balance,
                 cashflow=cashflow,
-                fx_series=fx_series
+                fx_series=fx_series,
+                lookback_periods=EBIT_EBITDA_LOOKBACK_PERIODS
             )
 
             built = False
@@ -1163,58 +1271,108 @@ def get_hardened_valuation_data_v2(ticker, years):
             # --------------------------------------------------------------
             if not built and requested_model == "EV_EBITDA":
                 denominator = fundamentals.get("ebitda")
+                periods_back = fundamentals.get("ebitda_periods_back")
 
                 if not _finite_positive(denominator):
-                    return (
-                        None,
-                        f"{ticker}: EV/EBITDA model requires positive latest EBITDA, "
-                        f"but no usable EBITDA figure was found.",
-                        None,
-                        fx_note,
-                        sector,
-                        valuation_model
+                    # No positive EBITDA anywhere in the lookback window --
+                    # fall back to P/S rather than hard-failing outright.
+                    df_daily_ps, report_freq_ps, ps_error = _build_ps_valuation(
+                        df_daily=df_daily,
+                        quarterly=quarterly,
+                        income=income,
+                        fx_series=fx_series
                     )
 
-                debt = fundamentals.get("total_debt")
-                cash = fundamentals.get("cash")
+                    if ps_error:
+                        return (
+                            None,
+                            f"{ticker}: EV/EBITDA model requires positive EBITDA within the last "
+                            f"{EBIT_EBITDA_LOOKBACK_PERIODS} annual reports, but none was found, "
+                            f"and the P/S fallback also failed ({ps_error}).",
+                            None,
+                            fx_note,
+                            sector,
+                            valuation_model
+                        )
 
-                debt = float(debt) if _is_valid_number(debt) else 0.0
-                cash = float(cash) if _is_valid_number(cash) else 0.0
+                    df_daily = df_daily_ps
+                    report_freq = f"{report_freq_ps} (fallback -- no positive EBITDA in lookback window)"
+                    valuation_model = "PS_EBITDA_FALLBACK"
+                    built = True
+                else:
+                    debt = fundamentals.get("total_debt")
+                    cash = fundamentals.get("cash")
 
-                df_daily["Enterprise_Value"] = df_daily["Market_Cap"] + debt - cash
-                df_daily["Valuation_Ratio"] = df_daily["Enterprise_Value"] / denominator
+                    debt = float(debt) if _is_valid_number(debt) else 0.0
+                    cash = float(cash) if _is_valid_number(cash) else 0.0
 
-                report_freq = "annual (latest EBITDA anchor)"
-                built = True
+                    df_daily["Enterprise_Value"] = df_daily["Market_Cap"] + debt - cash
+                    df_daily["Valuation_Ratio"] = df_daily["Enterprise_Value"] / denominator
+
+                    if periods_back:
+                        report_freq = (
+                            f"annual (EBITDA anchor lagged {periods_back} period(s) back; "
+                            f"latest period was not usable)"
+                        )
+                        valuation_model = "EV_EBITDA_LAGGED_ANCHOR"
+                    else:
+                        report_freq = "annual (latest EBITDA anchor)"
+
+                    built = True
 
             # --------------------------------------------------------------
             # EV/EBIT
             # --------------------------------------------------------------
             elif not built and requested_model == "EV_EBIT":
                 denominator = fundamentals.get("ebit")
+                periods_back = fundamentals.get("ebit_periods_back")
 
                 if not _finite_positive(denominator):
-                    return (
-                        None,
-                        f"{ticker}: EV/EBIT model requires positive latest EBIT, "
-                        f"but no usable EBIT figure was found.",
-                        None,
-                        fx_note,
-                        sector,
-                        valuation_model
+                    # No positive EBIT anywhere in the lookback window --
+                    # fall back to P/S rather than hard-failing outright.
+                    df_daily_ps, report_freq_ps, ps_error = _build_ps_valuation(
+                        df_daily=df_daily,
+                        quarterly=quarterly,
+                        income=income,
+                        fx_series=fx_series
                     )
 
-                debt = fundamentals.get("total_debt")
-                cash = fundamentals.get("cash")
+                    if ps_error:
+                        return (
+                            None,
+                            f"{ticker}: EV/EBIT model requires positive EBIT within the last "
+                            f"{EBIT_EBITDA_LOOKBACK_PERIODS} annual reports, but none was found, "
+                            f"and the P/S fallback also failed ({ps_error}).",
+                            None,
+                            fx_note,
+                            sector,
+                            valuation_model
+                        )
 
-                debt = float(debt) if _is_valid_number(debt) else 0.0
-                cash = float(cash) if _is_valid_number(cash) else 0.0
+                    df_daily = df_daily_ps
+                    report_freq = f"{report_freq_ps} (fallback -- no positive EBIT in lookback window)"
+                    valuation_model = "PS_EBIT_FALLBACK"
+                    built = True
+                else:
+                    debt = fundamentals.get("total_debt")
+                    cash = fundamentals.get("cash")
 
-                df_daily["Enterprise_Value"] = df_daily["Market_Cap"] + debt - cash
-                df_daily["Valuation_Ratio"] = df_daily["Enterprise_Value"] / denominator
+                    debt = float(debt) if _is_valid_number(debt) else 0.0
+                    cash = float(cash) if _is_valid_number(cash) else 0.0
 
-                report_freq = "annual (latest EBIT anchor)"
-                built = True
+                    df_daily["Enterprise_Value"] = df_daily["Market_Cap"] + debt - cash
+                    df_daily["Valuation_Ratio"] = df_daily["Enterprise_Value"] / denominator
+
+                    if periods_back:
+                        report_freq = (
+                            f"annual (EBIT anchor lagged {periods_back} period(s) back; "
+                            f"latest period was not usable)"
+                        )
+                        valuation_model = "EV_EBIT_LAGGED_ANCHOR"
+                    else:
+                        report_freq = "annual (latest EBIT anchor)"
+
+                    built = True
 
             # --------------------------------------------------------------
             # P/B
