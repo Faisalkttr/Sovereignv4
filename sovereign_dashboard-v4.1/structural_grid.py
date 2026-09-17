@@ -147,7 +147,7 @@ SECTIONS = {
             "Layer 1: Motion, Actuation & Factory Logistics": {
                 "weight": 0.35,
                 # Using Tokyo listings for consistency with 6273.T/6383.T, except Fanuc (FANUY ADR used in AI/SEMIS)
-                "tickers": ["FANUY", "6581.T", "6594.T", "6273.T", "6383.T"],
+                "tickers": ["FANUY", "6268.T", "6594.T", "6273.T", "6383.T"],
                 "protocol": "Precision reducers, servos, motion control (Fanuc, Nidec, Nabtesco), "
                 "pneumatics/automation (SMC - 6273.T), and automated logistics/warehousing (Daifuku - 6383.T).",
             },
