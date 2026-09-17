@@ -1,17 +1,17 @@
 """
-Structural Allocation Grid — WATCHLIST-MAXIMAL BUILD (v4.2 with ROBOTICS)
+Structural Allocation Grid — WATCHLIST-MAXIMAL BUILD (v4.3 with ROBOTICS)
 Pure data encoding (sections -> layers -> target weights -> tickers ->
 protocol/thesis). No Streamlit, no network calls; safe to import anywhere.
 
 Core portfolio (sums to 100%):
-INFRA 14% + ENERGY & COMMODITY 18% + AI/SEMIS 10% + EM 7% 
-+ Business & Futuristic Overlay 6% + ROBOTICS 5% 
-+ BTC 20% (reduced from 25% to fit Robotics) + GOLD 10% + CASH 10% = 100%
+INFRA 13% + ENERGY & COMMODITY 17% + AI/SEMIS 9% + EM 7%
++ Biz & Futuristic Overlay 5% + ROBOTICS 5%
++ BTC 24% + GOLD 10% + CASH 10% = 100%
 """
 
 SECTIONS = {
     "INFRA": {
-        "target_pct": 0.14,
+        "target_pct": 0.13,
         "layers": {
             "Layer 1: Hard Assets & Global Freight": {
                 "weight": 0.35,
@@ -49,7 +49,7 @@ SECTIONS = {
         },
     },
     "ENERGY & COMMODITY": {
-        "target_pct": 0.18,
+        "target_pct": 0.17,
         "layers": {
             "Layer 1: Monetary Royalties": {
                 "weight": 0.30,
@@ -79,7 +79,7 @@ SECTIONS = {
         },
     },
     "AI/SEMIS": {
-        "target_pct": 0.10,
+        "target_pct": 0.09,
         "layers": {
             "Layer 1: Physical Monopolies, Foundry & Materials": {
                 "weight": 0.45,
@@ -140,13 +140,12 @@ SECTIONS = {
             },
         },
     },
-    # --- NEW SECTION: ROBOTICS (5%) ---
+    # --- SECTION: ROBOTICS (5%) ---
     "ROBOTICS": {
         "target_pct": 0.05,
         "layers": {
             "Layer 1: Motion, Actuation & Factory Logistics": {
                 "weight": 0.35,
-                # Using Tokyo listings for consistency with 6273.T/6383.T, except Fanuc (FANUY ADR used in AI/SEMIS)
                 "tickers": ["FANUY", "6268.T", "6594.T", "6273.T", "6383.T"],
                 "protocol": "Precision reducers, servos, motion control (Fanuc, Nidec, Nabtesco), "
                 "pneumatics/automation (SMC - 6273.T), and automated logistics/warehousing (Daifuku - 6383.T).",
@@ -160,10 +159,10 @@ SECTIONS = {
             },
             "Layer 3: Edge & Power Silicon": {
                 "weight": 0.30,
+                # ASX = ASE Technology Holding (Global OSAT/Advanced Packaging Monopoly)
                 "tickers": ["IFX.DE", "NXPI", "MCHP", "TXN", "RNECY", "ARM", "ASX"],
                 "protocol": "Power management & MCUs for industrial edge (Infineon, NXP, Microchip, TI, Renesas), "
-                "CPU architecture (ARM). NOTE: 'ASX' included per grid image but likely refers to "
-                "Australian Securities Exchange (financials) rather than silicon; verify if typo for AMAT/ASML.",
+                "CPU architecture (ARM), and advanced semiconductor packaging/testing (ASE Technology).",
             },
             "Layer 4: EMS & Integration": {
                 "weight": 0.15,
@@ -175,7 +174,7 @@ SECTIONS = {
     },
     # ----------------------------------
     "Business & Futuristic Overlay": {
-        "target_pct": 0.06,
+        "target_pct": 0.05,
         "layers": {
             "NVO": {
                 "weight": 0.30,
@@ -210,7 +209,7 @@ SECTIONS = {
         },
     },
     "BTC": {
-        "target_pct": 0.20,  # Reduced from 0.25 to accommodate Robotics 5%
+        "target_pct": 0.24,
         "layers": {
             "Core: Cold Wallet": {
                 "weight": 0.90,
@@ -272,10 +271,10 @@ def flatten_universe() -> list[dict]:
 
 NON_EQUITY_TICKERS = {"BTC", "GOLD", "CASH"}
 
-# Updated Core Eligible to include Robotics monopolies
+# Updated Core Eligible to include Robotics monopolies (ASE is a global OSAT monopoly)
 CORE_ELIGIBLE_TICKERS = {
     "TPL", "ADPORTS.AD", "ICTEF", "CNI", "CP", "FNV", "WPM", "TSM", "ASML", "PANW",
-    "NVO", "XYL", "WM", "RSG", "AME", "CGNX",  # Added AME (AMETEK) and CGNX (Cognex)
+    "NVO", "XYL", "WM", "RSG", "AME", "CGNX", "ASX",
 }
 
 # Backward compat
