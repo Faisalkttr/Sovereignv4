@@ -218,8 +218,8 @@ SECTIONS = {
             },
             "Equity Satellites (capped)": {
                 "weight": 0.10,
-                "tickers": ["MSTR", "RIOT"],
-                "satellites": ["MSTR", "RIOT"],
+                "tickers": ["MSTR", "RIOT", "3350.T"],
+                "satellites": ["MSTR", "RIOT", "3350.T"],
                 "protocol": "High-volatility BTC expressions (treasury vehicle, miner). Capped satellite "
                 "sleeve; trim into NAV-premium strength.",
             },
